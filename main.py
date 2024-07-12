@@ -39,6 +39,27 @@ def fetch_projetos_deputados(tipo_numeros_anos):
     return projetos_deputados
 
 @st.cache_data(ttl=3600)
+def fetch_projetos_por_keywords(keywords):
+    projetos_keywords = []
+    for keyword in keywords:
+        url = "https://dadosabertos.camara.leg.br/api/v2/proposicoes"
+        params = {
+            "keywords": keyword,
+            "ordenarPor": "ano",
+            "ordem": "asc",
+            "itens": 10
+        }
+        response = requests.get(url, params=params)
+        if response.status_code == 200:
+            projetos = response.json()["dados"]
+            for projeto in projetos:
+                projeto['keyword'] = keyword
+            projetos_keywords.extend(projetos)
+        else:
+            st.write(f"Erro ao fazer requisição para a API com a palavra-chave {keyword}: {response.status_code}")
+    return projetos_keywords
+
+@st.cache_data(ttl=3600)
 def fetch_tramitacoes_deputados(id_proposicao):
     url_tramitacoes = f"https://dadosabertos.camara.leg.br/api/v2/proposicoes/{id_proposicao}/tramitacoes"
     response_tramitacoes = requests.get(url_tramitacoes)
@@ -119,7 +140,7 @@ def create_dataframe_deputados(projetos_deputados):
             proposicao['tramitacoes'] = tramitacoes
 
     colunas = ['id', 'siglaTipo', 'numero', 'ano', 'autor', 'ementa', 'dataHora',
-               'descricaoTramitacao', 'descricaoSituacao', 'despacho', 'apreciacao', 'tramitacoes', 'relacionadas']
+               'descricaoTramitacao', 'descricaoSituacao', 'despacho', 'apreciacao', 'tramitacoes', 'relacionadas', 'keyword']
     df_deputados = pd.DataFrame(projetos_deputados, columns=colunas)
 
     if df_deputados.empty:
@@ -132,7 +153,7 @@ def create_dataframe_deputados(projetos_deputados):
     df_deputados['numero'] = df_deputados['numero'].astype(int)
 
     df_deputados.columns = ["ID Proposição", "Tipo", "Número", "Ano", "Autor", "Ementa", "Data e Hora da última tramitação",
-                            "Última tramitação", "Última situação", "Último despacho", "Última apreciação", "Histórico de tramitações", "Proposições relacionadas"]
+                            "Última tramitação", "Última situação", "Último despacho", "Última apreciação", "Histórico de tramitações", "Proposições relacionadas", "Palavra-chave"]
     return df_deputados
 
 # Lista de números e anos das proposições
@@ -148,10 +169,18 @@ tipo_numeros_anos = [
     ("REQ", 90, 2023)
 ]
 
+keywords = [
+    "CGU", "CONTROLADORIA GERAL DA UNIÃO", "VINÍCIUS MARQUES DE CARVALHO",
+    "12.527", "LAI", "LEI DE ACESSO À INFORMAÇÃO",
+    "12.846", "LAC", "LEI ANTICORRUPÇÃO",
+    "LENIÊNCIA", "CONFLITO DE INTERESSES", "DELAÇÃO",
+    "8.112", "14.133"
+]
+
 projetos_deputados = fetch_projetos_deputados(tipo_numeros_anos)
 df_deputados = create_dataframe_deputados(projetos_deputados)
 
-#Ano está formatado como número
+# Ano está formatado como número
 def formatar_numero(valor):
     return f"{valor}"
 
@@ -176,4 +205,27 @@ st.download_button(
    "proposicoes_deputados.csv",
    "text/csv",
    key='download-csv'
+)
+
+# Busca separada para as palavras-chave
+projetos_keywords = fetch_projetos_por_keywords(keywords)
+df_keywords = create_dataframe_deputados(projetos_keywords)
+
+dados_formatados_keywords = df_keywords.style.format({'Número': formatar_numero,
+                                                      'Ano': formatar_numero})
+
+st.markdown(
+    "<div style='text-align: center; color: #555555; font-size: 1.3em;margin-bottom: 20px;'>Proposições legislativas relacionadas às palavras-chave</div>",
+    unsafe_allow_html=True)
+
+st.dataframe(dados_formatados_keywords, use_container_width=True, hide_index=True, height=500)
+
+csv_keywords = convert_df(df_keywords)
+
+st.download_button(
+   "Pressione para fazer o download",
+   csv_keywords,
+   "proposicoes_keywords.csv",
+   "text/csv",
+   key='download-csv-keywords'
 )
